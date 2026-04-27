@@ -1,7 +1,7 @@
 import { api } from '../api.js';
 import {
   spinner, errorBanner, noKeyBanner, escHtml, todayYYYYMMDD,
-  searchableSelectHTML, initSearchableSelect,
+  searchableSelectHTML, initSearchableSelect, renderPager,
 } from '../utils.js';
 
 /* ── cache de noticieros para evitar re-fetch al navegar ── */
@@ -106,6 +106,10 @@ function initFilters(container) {
   ssWrap.addEventListener('ss:change', apply);
 }
 
+/* Estado de paginación para la tabla principal */
+let _ntPage    = 1;
+let _ntPerPage = 20;
+
 function renderTable(container, items) {
   const el    = container.querySelector('#nt-body');
   const count = container.querySelector('#nt-count');
@@ -118,6 +122,7 @@ function renderTable(container, items) {
       </svg>
       Sin noticieros para los filtros aplicados
     </div>`;
+    _ntPage = 1;
     return;
   }
 
@@ -131,6 +136,7 @@ function renderTable(container, items) {
   const keys = [...new Set(sorted)];
 
   el.innerHTML = `
+    <div id="nt-pager-top"></div>
     <div class="table-wrap">
       <table>
         <thead>
@@ -141,36 +147,51 @@ function renderTable(container, items) {
         </thead>
         <tbody id="nt-tbody"></tbody>
       </table>
-    </div>`;
+    </div>
+    <div id="nt-pager-bottom"></div>`;
 
-  const tbody = el.querySelector('#nt-tbody');
-  items.forEach(row => {
-    const city    = String(f(row, 'city', 'ciudad', 'city_code') ?? '');
-    const channel = String(f(row, 'channel', 'canal', 'channel_code', 'channelCode') ?? '');
-    const code    = String(f(row, 'code', 'codigo', 'noticiero_code') ?? '');
-    const label   = String(f(row, 'name', 'nombre', 'station_name') ?? channel);
+  function paintRows() {
+    const start  = (_ntPage - 1) * _ntPerPage;
+    const slice  = items.slice(start, start + _ntPerPage);
+    const tbody  = el.querySelector('#nt-tbody');
+    tbody.innerHTML = '';
 
-    const tr = document.createElement('tr');
-    tr.innerHTML =
-      keys.map(k => `<td>${escHtml(String(row[k] ?? '-'))}</td>`).join('') +
-      `<td>
-        <button class="btn btn-sm btn-secondary btn-ver-notas"
-          data-city="${escHtml(city)}"
-          data-channel="${escHtml(channel)}"
-          data-code="${escHtml(code)}"
-          data-label="${escHtml(label)}">
-          Ver notas →
-        </button>
-      </td>`;
-    tbody.appendChild(tr);
-  });
+    slice.forEach(row => {
+      const city    = String(f(row, 'city', 'ciudad', 'city_code') ?? '');
+      const channel = String(f(row, 'channel', 'canal', 'channel_code', 'channelCode') ?? '');
+      const code    = String(f(row, 'code', 'codigo', 'noticiero_code') ?? '');
+      const label   = String(f(row, 'name', 'nombre', 'station_name') ?? channel);
 
-  tbody.querySelectorAll('.btn-ver-notas').forEach(btn => {
-    btn.addEventListener('click', () => {
-      const { city, channel, code, label } = btn.dataset;
-      renderNotasView(container, { city, channel, code, label });
+      const tr = document.createElement('tr');
+      tr.innerHTML =
+        keys.map(k => `<td>${escHtml(String(row[k] ?? '-'))}</td>`).join('') +
+        `<td>
+          <button class="btn btn-sm btn-secondary btn-ver-notas"
+            data-city="${escHtml(city)}"
+            data-channel="${escHtml(channel)}"
+            data-code="${escHtml(code)}"
+            data-label="${escHtml(label)}">
+            Ver notas →
+          </button>
+        </td>`;
+      tbody.appendChild(tr);
     });
-  });
+
+    tbody.querySelectorAll('.btn-ver-notas').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const { city, channel, code, label } = btn.dataset;
+        renderNotasView(container, { city, channel, code, label });
+      });
+    });
+
+    const onPage = (p, pp) => { _ntPage = p; _ntPerPage = pp; paintRows(); };
+    renderPager(el.querySelector('#nt-pager-top'),    items.length, _ntPage, _ntPerPage, onPage);
+    renderPager(el.querySelector('#nt-pager-bottom'), items.length, _ntPage, _ntPerPage, onPage);
+  }
+
+  /* Resetea la página solo cuando cambia el conjunto de items (filtros) */
+  _ntPage = 1;
+  paintRows();
 }
 
 /* ════════════════════════════════════════════════════════
@@ -231,8 +252,8 @@ async function fetchNotas(container, ctx) {
   }
 }
 
-function renderNotasList(container, el, items, ctx) {
-  if (!items.length) {
+function renderNotasList(container, el, allItems, ctx) {
+  if (!allItems.length) {
     el.innerHTML = `<div class="card"><div class="empty-state">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
         <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
@@ -244,49 +265,85 @@ function renderNotasList(container, el, items, ctx) {
   }
 
   el.innerHTML = `<div class="card">
+    <div class="results-filter-bar">
+      <div class="results-filter-wrap">
+        <svg class="filter-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
+        </svg>
+        <input id="notas-text-filter" class="input results-filter-input" placeholder="Filtrar por título, encabezado o resumen…" autocomplete="off" />
+      </div>
+      <span id="notas-count" class="results-count"></span>
+    </div>
+    <div id="notas-pager-top"></div>
     <div class="table-wrap">
       <table>
-        <thead>
-          <tr>
-            <th>Hora</th>
-            <th>Duración</th>
-            <th>Tipo</th>
-            <th>Encabezado</th>
-            <th></th>
-          </tr>
-        </thead>
+        <thead><tr>
+          <th style="width:80px">Hora</th>
+          <th style="width:80px">Duración</th>
+          <th style="width:90px">Tipo</th>
+          <th>Encabezado</th>
+          <th style="width:100px"></th>
+        </tr></thead>
         <tbody id="notas-tbody"></tbody>
       </table>
     </div>
-    <p style="margin-top:10px;font-size:12px;color:var(--text-muted)">${items.length} nota(s)</p>
+    <div id="notas-pager-bottom"></div>
   </div>`;
 
-  const tbody = el.querySelector('#notas-tbody');
-  items.forEach(row => {
-    const id   = row.id ?? row.Id ?? row.ID ?? Object.values(row)[0];
-    const tipo = String(row.type ?? row.tipo ?? '-');
-    const tr   = document.createElement('tr');
-    tr.innerHTML = `
-      <td style="white-space:nowrap">${escHtml(String(row.time ?? row.hora ?? '-'))}</td>
-      <td style="white-space:nowrap">${escHtml(String(row.duration ?? row.duracion ?? '-'))}</td>
-      <td><span class="badge badge-blue">${escHtml(tipo)}</span></td>
-      <td style="max-width:320px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">
-        ${escHtml(String(row.headline ?? row.title ?? row.encabezado ?? row.nota ?? '-'))}
-      </td>
-      <td>
-        <button class="btn btn-sm btn-secondary" data-id="${escHtml(String(id))}">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:12px;height:12px">
-            <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/>
-          </svg>
-          Ver detalle
-        </button>
-      </td>`;
-    tbody.appendChild(tr);
+  let filtered = allItems;
+  let page     = 1;
+  let perPage  = 20;
+
+  el.querySelector('#notas-text-filter').addEventListener('input', e => {
+    const q = e.target.value.toLowerCase();
+    filtered = q
+      ? allItems.filter(row => [row.headline, row.title, row.encabezado, row.nota, row.summary, row.resumen]
+          .filter(Boolean).join(' ').toLowerCase().includes(q))
+      : allItems;
+    page = 1;
+    paint();
   });
 
-  tbody.querySelectorAll('[data-id]').forEach(btn => {
-    btn.addEventListener('click', () => fetchNoteDetail(container, btn.dataset.id, ctx));
-  });
+  function paint() {
+    const countEl = el.querySelector('#notas-count');
+    if (countEl) countEl.textContent = `${filtered.length} nota(s)`;
+
+    const slice = filtered.slice((page - 1) * perPage, page * perPage);
+    const tbody = el.querySelector('#notas-tbody');
+    tbody.innerHTML = '';
+
+    slice.forEach(row => {
+      const id   = row.id ?? row.Id ?? row.ID ?? Object.values(row)[0];
+      const tipo = String(row.type ?? row.tipo ?? '-');
+      const tr   = document.createElement('tr');
+      tr.innerHTML = `
+        <td style="white-space:nowrap">${escHtml(String(row.time ?? row.hora ?? '-'))}</td>
+        <td style="white-space:nowrap">${escHtml(String(row.duration ?? row.duracion ?? '-'))}</td>
+        <td><span class="badge badge-blue">${escHtml(tipo)}</span></td>
+        <td style="max-width:320px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">
+          ${escHtml(String(row.headline ?? row.title ?? row.encabezado ?? row.nota ?? '-'))}
+        </td>
+        <td>
+          <button class="btn btn-sm btn-secondary" data-id="${escHtml(String(id))}">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:12px;height:12px">
+              <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/>
+            </svg>
+            Ver detalle
+          </button>
+        </td>`;
+      tbody.appendChild(tr);
+    });
+
+    tbody.querySelectorAll('[data-id]').forEach(btn => {
+      btn.addEventListener('click', () => fetchNoteDetail(container, btn.dataset.id, ctx));
+    });
+
+    const onPage = (p, pp) => { page = p; perPage = pp; paint(); };
+    renderPager(el.querySelector('#notas-pager-top'),    filtered.length, page, perPage, onPage);
+    renderPager(el.querySelector('#notas-pager-bottom'), filtered.length, page, perPage, onPage);
+  }
+
+  paint();
 }
 
 /* ════════════════════════════════════════════════════════
