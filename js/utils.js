@@ -45,3 +45,136 @@ export function todayYYYYMMDD() {
   const day = String(d.getDate()).padStart(2, '0');
   return `${y}${m}${day}`;
 }
+
+/**
+ * Returns the HTML string for a searchable select widget.
+ * After inserting into the DOM, call initSearchableSelect(el, options).
+ */
+export function searchableSelectHTML(id, placeholder = 'Buscar...') {
+  return `
+    <div class="ss-wrap" id="${escHtml(id)}" data-value="">
+      <div class="ss-control">
+        <input type="text" class="ss-input" placeholder="${escHtml(placeholder)}" autocomplete="off" spellcheck="false" />
+        <button type="button" class="ss-clear" title="Limpiar">&#x2715;</button>
+        <span class="ss-chevron">
+          <svg viewBox="0 0 10 6" fill="none" stroke="currentColor" stroke-width="1.8">
+            <path d="M1 1l4 4 4-4"/>
+          </svg>
+        </span>
+      </div>
+      <ul class="ss-dropdown" style="display:none"></ul>
+    </div>`;
+}
+
+/**
+ * Initialises a searchable select widget.
+ * @param {HTMLElement} wrap - the .ss-wrap element
+ * @param {Array<{value:string, label:string}>} options
+ * @returns {{ getValue, setValue, clear }}
+ */
+export function initSearchableSelect(wrap, options) {
+  const input    = wrap.querySelector('.ss-input');
+  const control  = wrap.querySelector('.ss-control');
+  const dropdown = wrap.querySelector('.ss-dropdown');
+  const clearBtn = wrap.querySelector('.ss-clear');
+
+  let currentValue = '';
+  let currentLabel = '';
+
+  function renderOptions(q = '') {
+    const lq = q.toLowerCase();
+    const filtered = q
+      ? options.filter(o => o.label.toLowerCase().includes(lq) || o.value.toLowerCase().includes(lq))
+      : options;
+
+    const shown = filtered.slice(0, 80);
+    dropdown.innerHTML = '';
+
+    if (!shown.length) {
+      const li = document.createElement('li');
+      li.className = 'ss-no-results';
+      li.textContent = 'Sin resultados';
+      dropdown.appendChild(li);
+      return;
+    }
+
+    shown.forEach(o => {
+      const li = document.createElement('li');
+      li.className = 'ss-option' + (o.value === currentValue ? ' ss-selected' : '');
+      li.textContent = o.label;
+      li.dataset.value = o.value;
+      li.addEventListener('mousedown', e => {
+        e.preventDefault();
+        pick(o.value, o.label);
+      });
+      dropdown.appendChild(li);
+    });
+
+    if (filtered.length > 80) {
+      const hint = document.createElement('li');
+      hint.className = 'ss-hint';
+      hint.textContent = `${filtered.length - 80} más — continúa escribiendo`;
+      dropdown.appendChild(hint);
+    }
+  }
+
+  function open() {
+    control.classList.add('open');
+    dropdown.style.display = '';
+    renderOptions(currentValue ? '' : input.value);
+  }
+
+  function close() {
+    control.classList.remove('open');
+    dropdown.style.display = 'none';
+    // Restore label if something was selected
+    if (currentValue) {
+      input.value = currentLabel;
+    } else {
+      input.value = '';
+    }
+  }
+
+  function pick(value, label) {
+    currentValue = value;
+    currentLabel = label;
+    input.value = label;
+    wrap.dataset.value = value;
+    wrap.classList.add('has-value');
+    wrap.dispatchEvent(new CustomEvent('ss:change', { detail: { value, label }, bubbles: true }));
+    close();
+  }
+
+  function clear() {
+    currentValue = '';
+    currentLabel = '';
+    input.value = '';
+    wrap.dataset.value = '';
+    wrap.classList.remove('has-value');
+    wrap.dispatchEvent(new CustomEvent('ss:change', { detail: { value: '', label: '' }, bubbles: true }));
+  }
+
+  input.addEventListener('focus', () => {
+    if (currentValue) input.value = '';
+    open();
+  });
+
+  input.addEventListener('input', () => {
+    currentValue = '';
+    wrap.dataset.value = '';
+    wrap.classList.remove('has-value');
+    renderOptions(input.value);
+    dropdown.style.display = '';
+  });
+
+  input.addEventListener('blur', () => setTimeout(close, 160));
+  input.addEventListener('keydown', e => { if (e.key === 'Escape') { close(); input.blur(); } });
+
+  clearBtn.addEventListener('click', () => { clear(); input.focus(); });
+
+  return {
+    getValue: () => wrap.dataset.value || '',
+    setValue: (value, label) => { if (value) pick(value, label || value); },
+    clear,
+  };
+}
