@@ -196,8 +196,11 @@ function renderTable(container, items) {
 
 /* ════════════════════════════════════════════════════════
    SUB-VISTA — Notas de un noticiero
+   cachedItems y listState se usan cuando se regresa del detalle
    ════════════════════════════════════════════════════════ */
-function renderNotasView(container, ctx) {
+function renderNotasView(container, ctx, cachedItems = null, listState = null) {
+  const dateValue = ctx.date ?? todayYYYYMMDD();
+
   container.innerHTML = `
     <div class="sub-page-header">
       <button class="back-btn" id="btn-back-list">
@@ -214,7 +217,7 @@ function renderNotasView(container, ctx) {
       <div style="display:flex;gap:10px;align-items:flex-end;flex-wrap:wrap">
         <div class="field" style="margin:0">
           <label class="field-label">Fecha (YYYYMMDD)</label>
-          <input id="notas-date" class="input" type="text" value="${todayYYYYMMDD()}" style="width:140px" />
+          <input id="notas-date" class="input" type="text" value="${escHtml(dateValue)}" style="width:140px" />
         </div>
         <button id="btn-buscar-notas" class="btn btn-primary">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -233,8 +236,13 @@ function renderNotasView(container, ctx) {
   container.querySelector('#btn-buscar-notas').addEventListener('click', doSearch);
   container.querySelector('#notas-date').addEventListener('keydown', e => { if (e.key === 'Enter') doSearch(); });
 
-  /* Carga automática */
-  doSearch();
+  /* Si venimos de volver atrás desde el detalle, reutiliza los datos cacheados */
+  if (cachedItems) {
+    const result = container.querySelector('#notas-result');
+    renderNotasList(container, result, cachedItems, { ...ctx, date: dateValue }, listState);
+  } else {
+    doSearch();
+  }
 }
 
 async function fetchNotas(container, ctx) {
@@ -252,7 +260,7 @@ async function fetchNotas(container, ctx) {
   }
 }
 
-function renderNotasList(container, el, allItems, ctx) {
+function renderNotasList(container, el, allItems, ctx, savedState = null) {
   if (!allItems.length) {
     el.innerHTML = `<div class="card"><div class="empty-state">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
@@ -291,15 +299,19 @@ function renderNotasList(container, el, allItems, ctx) {
   </div>`;
 
   let filtered = allItems;
-  let page     = 1;
-  let perPage  = 20;
+  let page     = savedState?.page    ?? 1;
+  let perPage  = savedState?.perPage ?? 20;
 
-  el.querySelector('#notas-text-filter').addEventListener('input', e => {
-    const q = e.target.value.toLowerCase();
-    filtered = q
-      ? allItems.filter(row => [row.headline, row.title, row.encabezado, row.nota, row.summary, row.resumen]
-          .filter(Boolean).join(' ').toLowerCase().includes(q))
-      : allItems;
+  const textInput = el.querySelector('#notas-text-filter');
+
+  /* Restaura texto del filtro si venimos de volver atrás */
+  if (savedState?.query) {
+    textInput.value = savedState.query;
+    filtered = applyFilter(allItems, savedState.query);
+  }
+
+  textInput.addEventListener('input', e => {
+    filtered = applyFilter(allItems, e.target.value);
     page = 1;
     paint();
   });
@@ -324,18 +336,21 @@ function renderNotasList(container, el, allItems, ctx) {
           ${escHtml(String(row.headline ?? row.title ?? row.encabezado ?? row.nota ?? '-'))}
         </td>
         <td>
-          <button class="btn btn-sm btn-secondary" data-id="${escHtml(String(id))}">
+          <button class="btn btn-sm btn-primary btn-ver-nota" data-id="${escHtml(String(id))}">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:12px;height:12px">
               <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/>
             </svg>
-            Ver detalle
+            Ver nota
           </button>
         </td>`;
       tbody.appendChild(tr);
     });
 
-    tbody.querySelectorAll('[data-id]').forEach(btn => {
-      btn.addEventListener('click', () => fetchNoteDetail(container, btn.dataset.id, ctx));
+    tbody.querySelectorAll('.btn-ver-nota').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const state = { page, perPage, query: textInput.value };
+        fetchNoteDetail(container, btn.dataset.id, ctx, allItems, state);
+      });
     });
 
     const onPage = (p, pp) => { page = p; perPage = pp; paint(); };
@@ -346,10 +361,19 @@ function renderNotasList(container, el, allItems, ctx) {
   paint();
 }
 
+function applyFilter(items, q) {
+  if (!q.trim()) return items;
+  const lq = q.toLowerCase();
+  return items.filter(row =>
+    [row.headline, row.title, row.encabezado, row.nota, row.summary, row.resumen]
+      .filter(Boolean).join(' ').toLowerCase().includes(lq)
+  );
+}
+
 /* ════════════════════════════════════════════════════════
    SUB-VISTA — Detalle de una nota
    ════════════════════════════════════════════════════════ */
-async function fetchNoteDetail(container, id, ctx) {
+async function fetchNoteDetail(container, id, ctx, allItems, listState) {
   container.innerHTML = `
     <div class="sub-page-header">
       <button class="back-btn" id="btn-back-notas">
@@ -358,12 +382,15 @@ async function fetchNoteDetail(container, id, ctx) {
         </svg>
         Volver a notas
       </button>
-      <h1>Detalle de nota</h1>
+      <h1>Nota</h1>
       <p>${escHtml(ctx.label || ctx.channel)} · ${escHtml(ctx.city)} · ${escHtml(ctx.date ?? '')}</p>
     </div>
     <div class="card" id="detail-card">${spinner()}</div>`;
 
-  container.querySelector('#btn-back-notas').addEventListener('click', () => renderNotasView(container, ctx));
+  /* Restaura la lista sin re-fetch, preservando página y filtro */
+  container.querySelector('#btn-back-notas').addEventListener('click', () => {
+    renderNotasView(container, ctx, allItems, listState);
+  });
 
   try {
     const note = await api.getNote(id);
