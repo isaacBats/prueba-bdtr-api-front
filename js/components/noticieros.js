@@ -521,13 +521,15 @@ async function fetchNoteDetail(container, id, ctx, allItems, listState) {
 
   try {
     const note = await api.getNote(id);
-    renderNoteDetail(container.querySelector('#detail-card'), note);
+    renderNoteDetail(container.querySelector('#detail-card'), note, ctx);
   } catch (e) {
     container.querySelector('#detail-card').innerHTML = errorBanner(e.message);
   }
 }
 
-function renderNoteDetail(card, note) {
+const NOTE_TYPES = ['general','bursatil','clima','deportes','entrevista','infomercial','opinion','resumen','vial'];
+
+function renderNoteDetail(card, note, ctx = {}) {
   const d = note.data ?? note.note ?? note;
 
   const headline   = d.headline   ?? d.encabezado ?? d.title ?? null;
@@ -554,7 +556,76 @@ function renderNoteDetail(card, note) {
     ([k, v]) => !knownKeys.has(k.toLowerCase()) && v != null && v !== ''
   );
 
+  /* ── Parámetros para generar nota (pre-llenados) ── */
+  const genCity    = String(d.city    ?? d.ciudad    ?? ctx.city    ?? '');
+  const genChannel = String(d.channel ?? d.canal     ?? ctx.channel ?? '');
+  const genDate    = String(d.date    ?? d.fecha     ?? '');
+  const genCode    = String(d.code    ?? d.codigo    ?? ctx.code    ?? '');
+  const genTime    = String(d.time    ?? d.hora      ?? '').replace(/:/g, '');
+  const genDur     = String(d.duration ?? d.duracion ?? d.dur ?? '');
+  const genType    = String(d.type    ?? d.tipo      ?? '');
+
   card.innerHTML = `
+    <div style="display:flex;justify-content:flex-end;margin-bottom:20px">
+      <button id="btn-toggle-gen" class="btn btn-secondary btn-sm">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:13px;height:13px">
+          <circle cx="12" cy="12" r="10"/>
+          <line x1="12" y1="8" x2="12" y2="16"/><line x1="8" y1="12" x2="16" y2="12"/>
+        </svg>
+        Generar nota
+      </button>
+    </div>
+
+    <!-- Panel de generación (oculto por defecto) -->
+    <div id="gen-panel" style="display:none;margin-bottom:24px">
+      <div style="background:var(--bg);border:1px solid var(--border);border-radius:var(--radius);padding:16px">
+        <h3 style="font-size:12px;font-weight:600;text-transform:uppercase;letter-spacing:.4px;color:var(--text-muted);margin-bottom:14px">Parámetros para generar nota</h3>
+        <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;margin-bottom:14px">
+          <div class="field" style="margin:0">
+            <label class="field-label">Ciudad</label>
+            <input id="gen-city"    class="input" value="${escHtml(genCity)}" />
+          </div>
+          <div class="field" style="margin:0">
+            <label class="field-label">Canal</label>
+            <input id="gen-channel" class="input" value="${escHtml(genChannel)}" />
+          </div>
+          <div class="field" style="margin:0">
+            <label class="field-label">Fecha (YYYYMMDD)</label>
+            <input id="gen-date"    class="input" value="${escHtml(genDate)}" />
+          </div>
+          <div class="field" style="margin:0">
+            <label class="field-label">Código noticiero</label>
+            <input id="gen-code"    class="input" value="${escHtml(genCode)}" />
+          </div>
+          <div class="field" style="margin:0">
+            <label class="field-label">Hora inicio (HHMMSS)</label>
+            <input id="gen-time"    class="input" value="${escHtml(genTime)}" placeholder="073503" />
+          </div>
+          <div class="field" style="margin:0">
+            <label class="field-label">Duración (segundos)</label>
+            <input id="gen-dur"     class="input" type="number" min="1" value="${escHtml(genDur)}" placeholder="120" />
+          </div>
+          <div class="field" style="margin:0">
+            <label class="field-label">Tipo (opcional)</label>
+            <select id="gen-type" class="select">
+              <option value="">— Sin especificar —</option>
+              ${NOTE_TYPES.map(t => `<option value="${t}"${genType === t ? ' selected' : ''}>${t}</option>`).join('')}
+            </select>
+          </div>
+        </div>
+        <div style="display:flex;align-items:center;gap:10px">
+          <button id="btn-gen-confirm" class="btn btn-primary btn-sm">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:13px;height:13px">
+              <polyline points="20 6 9 17 4 12"/>
+            </svg>
+            Procesar nota
+          </button>
+          <button id="btn-gen-cancel" class="btn btn-secondary btn-sm">Cancelar</button>
+        </div>
+        <div id="gen-result" style="margin-top:12px"></div>
+      </div>
+    </div>
+
     ${headline ? `
     <div class="detail-section">
       <h3>Encabezado</h3>
@@ -604,4 +675,70 @@ function renderNoteDetail(card, note) {
       <summary style="cursor:pointer;color:var(--text-muted);font-size:12px">Ver datos completos (JSON)</summary>
       <pre style="margin-top:10px;font-size:11px;overflow:auto;line-height:1.5">${escHtml(JSON.stringify(d, null, 2))}</pre>
     </details>` : ''}`;
+
+  /* ── Toggle del panel ── */
+  const panel  = card.querySelector('#gen-panel');
+  const togBtn = card.querySelector('#btn-toggle-gen');
+
+  togBtn.addEventListener('click', () => {
+    const open = panel.style.display === 'none';
+    panel.style.display = open ? '' : 'none';
+    togBtn.innerHTML = open
+      ? `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:13px;height:13px"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg> Cancelar`
+      : `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:13px;height:13px"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="16"/><line x1="8" y1="12" x2="16" y2="12"/></svg> Generar nota`;
+  });
+
+  card.querySelector('#btn-gen-cancel').addEventListener('click', () => {
+    panel.style.display = 'none';
+    togBtn.innerHTML = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:13px;height:13px"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="16"/><line x1="8" y1="12" x2="16" y2="12"/></svg> Generar nota`;
+  });
+
+  card.querySelector('#btn-gen-confirm').addEventListener('click', () => processGen(card));
+}
+
+async function processGen(card) {
+  const city    = card.querySelector('#gen-city').value.trim();
+  const channel = card.querySelector('#gen-channel').value.trim();
+  const date    = card.querySelector('#gen-date').value.trim();
+  const code    = card.querySelector('#gen-code').value.trim();
+  const time    = card.querySelector('#gen-time').value.trim().replace(/:/g, '');
+  const dur     = card.querySelector('#gen-dur').value.trim();
+  const type    = card.querySelector('#gen-type').value;
+  const result  = card.querySelector('#gen-result');
+
+  if (!city || !channel || !date || !code || !time || !dur) {
+    result.innerHTML = errorBanner('Ciudad, canal, fecha, código, hora y duración son obligatorios.');
+    return;
+  }
+
+  const btn = card.querySelector('#btn-gen-confirm');
+  btn.disabled = true;
+  result.innerHTML = spinner();
+
+  try {
+    const data  = await api.processAiNote(city, date, channel, code, time, dur, type || undefined);
+    const newId = data.id ?? data.Id ?? data.noteId ?? JSON.stringify(data);
+    result.innerHTML = `
+      <div class="success-banner" style="margin-bottom:0">
+        <strong>Nota generada.</strong> La generación es asíncrona — espera unos segundos.
+      </div>
+      ${newId ? `<div style="margin-top:8px;display:flex;gap:8px;align-items:center">
+        <code style="background:var(--bg);padding:4px 8px;border-radius:4px;border:1px solid var(--border);font-size:11px;flex:1;word-break:break-all">${escHtml(String(newId))}</code>
+        <button id="btn-copy-gen-id" class="btn btn-sm btn-secondary">Copiar ID</button>
+      </div>` : ''}`;
+
+    const copyBtn = result.querySelector('#btn-copy-gen-id');
+    if (copyBtn) {
+      copyBtn.addEventListener('click', () => {
+        navigator.clipboard.writeText(String(newId)).then(() => {
+          copyBtn.textContent = '¡Copiado!';
+          setTimeout(() => { copyBtn.textContent = 'Copiar ID'; }, 2000);
+        });
+      });
+    }
+  } catch (e) {
+    result.innerHTML = errorBanner(e.message);
+  } finally {
+    btn.disabled = false;
+  }
 }
