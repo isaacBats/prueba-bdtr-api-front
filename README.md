@@ -1,15 +1,8 @@
-# BDTR Noticias AI
+# Opemedios — Test API BDTR Noticias
 
-Aplicación web para consumir la API de [BDTR.NET](https://bdtr.net). Permite consultar noticieros, notas, transcripciones y configurar webhooks desde una interfaz minimalista.
+Aplicación web estática para consumir la [API AI de BDTR.NET](https://bdtr.net). Permite explorar noticieros, consultar y filtrar notas, leer transcripciones y administrar webhooks desde una interfaz minimalista.
 
-> Funciona completamente en el navegador — sin servidor, sin dependencias, sin build.
-
-## Demo
-
-Una vez publicado en GitHub Pages la URL será:
-```
-https://<tu-usuario>.github.io/<nombre-del-repo>/
-```
+> Funciona 100% en el navegador — sin servidor, sin dependencias, sin build.
 
 ---
 
@@ -25,16 +18,16 @@ git push -u origin master
 ### 2. Activa GitHub Pages
 
 1. Abre tu repositorio en GitHub
-2. Ve a **Settings** → **Pages** (barra lateral izquierda)
-3. En **Source** selecciona la rama `master` (o `main`) y la carpeta **`/ (root)`**
+2. Ve a **Settings** → **Pages**
+3. En **Source** selecciona la rama `master` y la carpeta **`/ (root)`**
 4. Haz clic en **Save**
 
-GitHub mostrará la URL pública en unos segundos:
+La URL pública quedará en:
 ```
 https://<tu-usuario>.github.io/<nombre-del-repo>/
 ```
 
-> El archivo `.nojekyll` ya está incluido en el repo para que GitHub Pages sirva los módulos ES correctamente.
+> El archivo `.nojekyll` ya está incluido para que GitHub Pages sirva los módulos ES correctamente.
 
 ---
 
@@ -42,38 +35,57 @@ https://<tu-usuario>.github.io/<nombre-del-repo>/
 
 La API Key **nunca se incluye en el código fuente** — se guarda en el `localStorage` del navegador.
 
-### Pasos
-
-1. Abre la aplicación en el navegador
+1. Abre la aplicación
 2. Haz clic en **Configuración** (esquina inferior izquierda del menú)
-3. Pega tu API Key en el campo y pulsa **Guardar**
+3. Pega tu API Key y pulsa **Guardar**
 
-La clave queda almacenada localmente en tu navegador. Cada usuario que use la app deberá ingresar su propia clave.
-
-### Obtener una API Key
-
-Contacta al equipo de BDTR.NET para solicitar una API Key. La documentación oficial del API se encuentra en `apiAiBdtrDoc.txt`.
+Cada usuario debe ingresar su propia clave. Para obtener una, contacta al equipo de BDTR.NET.
 
 ---
 
 ## Funcionalidades
 
-| Sección | Endpoint | Descripción |
-|---|---|---|
-| Noticieros | `GET /getAiNoticieros` | Lista todos los noticieros disponibles |
-| Notas | `GET /getAiNotes` | Busca notas por ciudad, fecha y canal |
-| Detalle de nota | `GET /getAiNote` | Muestra encabezado, resumen y transcripción |
-| Transcripción | `GET /getAiProgramTranscript` | Obtiene el VTT de un noticiero |
-| Generar nota | `GET /processAiNote` | Genera una nota a partir de un segmento DVR |
-| Webhook Notas | `POST/GET /setAiWebhook` `/queryAiWebhook` | Configura recepción automática de notas |
-| Webhook VTT | `POST/GET /setAiVttHook` `/queryAiVttHook` | Configura recepción de transcripciones |
-| Webhook Social | `POST/GET /setAiXHook` `/queryAiXHook` | Configura recepción de redes sociales |
+### Noticieros
+- Lista todos los noticieros procesados por BDTR AI
+- Filtros por texto libre, ciudad y estación (select con búsqueda tipo Select2)
+- Paginador configurable (20 / 30 / 50 por página)
+- Botón **"Ver notas →"** que abre la sub-vista de notas del noticiero
+
+### Sub-vista de notas (desde Noticieros)
+- Busca automáticamente los últimos 30 días sin requerir fecha
+- Barra de progreso mientras se consultan los días en lotes paralelos de 5
+- Resultados ordenados de más reciente a más antiguo
+- Columnas: Fecha, Hora, Noticiero, Tipo, Encabezado (extraídos del ID cuando la API no los devuelve directamente)
+- Filtro de texto en tiempo real sobre los resultados
+- Paginador (20 / 30 / 50)
+- Botón **"Cargar 30 días anteriores"** para extender el rango sin perder resultados
+- Botón **"Ver nota"** → detalle completo con encabezado, metadatos, resumen y transcripción
+- Panel inline **"Generar nota"** en el detalle: pre-llena ciudad, canal, fecha, código, hora, duración y tipo; permite editar y lanza `processAiNote`
+- Volver a la lista restaura página, tamaño de página y filtro de texto (sin re-fetch)
+
+### Notas (búsqueda directa)
+- Selector de ciudad (poblado desde la API de noticieros)
+- Canal con búsqueda tipo Select2 (opciones filtradas por ciudad seleccionada)
+- Campo de fecha y código de noticiero opcional
+- Filtro de texto sobre los resultados
+- Paginador (20 / 30 / 50)
+- Vista de detalle con encabezado, metadatos, resumen, transcripción y campos adicionales
+
+### Transcripción
+- Obtiene el VTT completo de un noticiero para una fecha dada
+- Muestra el contenido en un área con scroll con botón de copiar al portapapeles
+
+### Webhooks
+Gestión unificada para los tres tipos de webhook:
+- **Webhook Notas** (`/setAiWebhook` / `/queryAiWebhook`)
+- **Webhook Transcripciones** (`/setAiVttHook` / `/queryAiVttHook`)
+- **Webhook Redes Sociales** (`/setAiXHook` / `/queryAiXHook`)
+
+Cada sección permite ver la URL configurada actualmente, cambiarla y desactivarla.
 
 ---
 
 ## Ejecutar localmente
-
-No requiere instalación. Basta con servir los archivos estáticos:
 
 ```bash
 # Con Node.js
@@ -81,27 +93,21 @@ npx serve .
 
 # Con Python
 python3 -m http.server 8080
-
-# Con VS Code
-# Instala la extensión "Live Server" y abre index.html
 ```
 
-Luego abre `http://localhost:8080` (o el puerto que indique el servidor).
-
-> **Nota:** Abrir `index.html` directamente con `file://` no funciona porque los módulos ES requieren un servidor HTTP.
+> Abrir `index.html` directamente con `file://` no funciona. Los módulos ES requieren un servidor HTTP.
 
 ---
 
 ## Nota sobre CORS
 
-La aplicación realiza las peticiones directamente desde el navegador hacia `api.bdtr.net`. Si el servidor de la API no incluye las cabeceras CORS necesarias, el navegador bloqueará las solicitudes.
+La app llama directamente a `api.bdtr.net` desde el navegador. Si el servidor no envía cabeceras CORS para el dominio de GitHub Pages, el navegador bloqueará las peticiones:
 
-En ese caso verás un error similar a:
 ```
 Access to fetch at 'https://api.bdtr.net/...' has been blocked by CORS policy
 ```
 
-Contacta a BDTR.NET para verificar que tu dominio de GitHub Pages esté habilitado, o configura un proxy si es necesario.
+Solicita a BDTR.NET que habilite el origen de tu GitHub Pages, o despliega un proxy CORS propio.
 
 ---
 
@@ -110,16 +116,16 @@ Contacta a BDTR.NET para verificar que tu dominio de GitHub Pages esté habilita
 ```
 ├── index.html                  # SPA shell + modal de configuración
 ├── css/
-│   └── style.css               # Sistema de diseño minimalista
+│   └── style.css               # Sistema de diseño (tokens, layout, componentes)
 ├── js/
-│   ├── api.js                  # Cliente API (todos los endpoints)
-│   ├── app.js                  # Router y lógica principal
-│   ├── utils.js                # Helpers (toast, spinner, escape HTML)
+│   ├── api.js                  # Cliente API — todos los endpoints
+│   ├── app.js                  # Router SPA + inicialización
+│   ├── utils.js                # Helpers: toast, spinner, escHtml, renderPager,
+│   │                           #          searchableSelectHTML, initSearchableSelect
 │   └── components/
-│       ├── noticieros.js       # Vista de noticieros
-│       ├── notas.js            # Vista de notas + detalle
-│       ├── transcripcion.js    # Vista de transcripción VTT
-│       ├── generarNota.js      # Vista de generación de notas
-│       └── webhook.js          # Vista de webhooks (notas, VTT, social)
-└── .nojekyll                   # Desactiva Jekyll en GitHub Pages
+│       ├── noticieros.js       # Noticieros + sub-vista notas + detalle + generar nota
+│       ├── notas.js            # Búsqueda directa de notas + detalle
+│       ├── transcripcion.js    # Transcripción VTT
+│       └── webhook.js          # Gestión de webhooks (notas, VTT, social)
+└── .nojekyll                   # Deshabilita Jekyll en GitHub Pages
 ```

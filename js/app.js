@@ -2,14 +2,12 @@ import { toast } from './utils.js';
 import { renderNoticieros } from './components/noticieros.js';
 import { renderNotas } from './components/notas.js';
 import { renderTranscripcion } from './components/transcripcion.js';
-import { renderGenerarNota } from './components/generarNota.js';
 import { renderWebhook } from './components/webhook.js';
 
 const views = {
   noticieros: renderNoticieros,
   notas: renderNotas,
   transcripcion: renderTranscripcion,
-  generar: renderGenerarNota,
   'webhook-notas': (c) => renderWebhook('notas', c),
   'webhook-vtt': (c) => renderWebhook('vtt', c),
   'webhook-social': (c) => renderWebhook('social', c),
