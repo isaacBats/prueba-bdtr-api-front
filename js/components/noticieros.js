@@ -196,11 +196,9 @@ function renderTable(container, items) {
 
 /* ════════════════════════════════════════════════════════
    SUB-VISTA — Notas de un noticiero
-   cachedItems y listState se usan cuando se regresa del detalle
+   cachedItems / listState se usan al volver del detalle sin re-fetch
    ════════════════════════════════════════════════════════ */
 function renderNotasView(container, ctx, cachedItems = null, listState = null) {
-  const dateValue = ctx.date ?? todayYYYYMMDD();
-
   container.innerHTML = `
     <div class="sub-page-header">
       <button class="back-btn" id="btn-back-list">
@@ -212,65 +210,123 @@ function renderNotasView(container, ctx, cachedItems = null, listState = null) {
       <h1>${escHtml(ctx.label || ctx.channel)}</h1>
       <p>${escHtml(ctx.city)}${ctx.channel ? ' · ' + escHtml(ctx.channel) : ''}${ctx.code ? ' · Código ' + escHtml(ctx.code) : ''}</p>
     </div>
-
-    <div class="card" style="margin-bottom:16px">
-      <div style="display:flex;gap:10px;align-items:flex-end;flex-wrap:wrap">
-        <div class="field" style="margin:0">
-          <label class="field-label">Fecha (YYYYMMDD)</label>
-          <input id="notas-date" class="input" type="text" value="${escHtml(dateValue)}" style="width:140px" />
-        </div>
-        <button id="btn-buscar-notas" class="btn btn-primary">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
-          </svg>
-          Buscar notas
-        </button>
-      </div>
-    </div>
-
     <div id="notas-result"></div>`;
 
   container.querySelector('#btn-back-list').addEventListener('click', () => renderNoticieros(container));
 
-  const doSearch = () => fetchNotas(container, ctx);
-  container.querySelector('#btn-buscar-notas').addEventListener('click', doSearch);
-  container.querySelector('#notas-date').addEventListener('keydown', e => { if (e.key === 'Enter') doSearch(); });
+  const result = container.querySelector('#notas-result');
 
-  /* Si venimos de volver atrás desde el detalle, reutiliza los datos cacheados */
   if (cachedItems) {
-    const result = container.querySelector('#notas-result');
-    renderNotasList(container, result, cachedItems, { ...ctx, date: dateValue }, listState);
+    /* Regreso del detalle — sin re-fetch */
+    renderNotasList(container, result, cachedItems, ctx, listState);
   } else {
-    doSearch();
+    /* Primera carga: busca los últimos 30 días */
+    fetchNotasRange(container, result, ctx, 0, 30, []);
   }
 }
 
-async function fetchNotas(container, ctx) {
-  const dateEl = container.querySelector('#notas-date');
-  const date   = dateEl ? dateEl.value.trim() : '';
-  const result = container.querySelector('#notas-result');
-  result.innerHTML = `<div class="card">${spinner()}</div>`;
+/* ──────────────────────────────────────────────────────
+   Genera string YYYYMMDD para "hace N días"
+   ────────────────────────────────────────────────────── */
+function offsetDate(daysAgo) {
+  const d = new Date();
+  d.setDate(d.getDate() - daysAgo);
+  return `${d.getFullYear()}${String(d.getMonth() + 1).padStart(2, '0')}${String(d.getDate()).padStart(2, '0')}`;
+}
 
-  try {
-    const data  = await api.getNotes(ctx.city, date, ctx.channel, ctx.code || undefined);
-    const items = Array.isArray(data) ? data : (data.data ?? data.notes ?? data.notas ?? []);
-    renderNotasList(container, result, items, { ...ctx, date });
-  } catch (e) {
-    result.innerHTML = `<div class="card">${errorBanner(e.message)}</div>`;
+/* ──────────────────────────────────────────────────────
+   Clave de ordenamiento descendente: YYYYMMDD + HHMMSS
+   ────────────────────────────────────────────────────── */
+function sortKey(row) {
+  return String(row.date ?? row.fecha ?? '') + String(row.time ?? row.hora ?? '');
+}
+
+/* ──────────────────────────────────────────────────────
+   Fetch de un rango de días en lotes paralelos de 5
+   startOffset = primer día a buscar (0 = hoy)
+   numDays     = cuántos días hacia atrás buscar
+   existing    = notas ya obtenidas en llamadas previas
+   ────────────────────────────────────────────────────── */
+async function fetchNotasRange(container, result, ctx, startOffset, numDays, existing) {
+  const BATCH = 5;
+  const dates = Array.from({ length: numDays }, (_, i) => offsetDate(startOffset + i));
+
+  let fetched  = 0;
+  let allItems = [...existing];
+
+  const showProgress = (done) => {
+    const pct = Math.round((done / dates.length) * 100);
+    result.innerHTML = `<div class="card">
+      <div class="fetch-progress">
+        <div class="spinner"></div>
+        <span>Buscando notas… ${done} / ${dates.length} días revisados</span>
+        <div class="progress-bar-wrap">
+          <div class="progress-bar-fill" style="width:${pct}%"></div>
+        </div>
+      </div>
+    </div>`;
+  };
+
+  showProgress(0);
+
+  for (let i = 0; i < dates.length; i += BATCH) {
+    /* Verifica que el contenedor sigue en el DOM (usuario no navegó) */
+    if (!container.querySelector('#notas-result')) return;
+
+    const batch = dates.slice(i, i + BATCH);
+    const settled = await Promise.allSettled(
+      batch.map(date => api.getNotes(ctx.city, date, ctx.channel, ctx.code || undefined))
+    );
+
+    settled.forEach(r => {
+      if (r.status === 'fulfilled') {
+        const items = Array.isArray(r.value)
+          ? r.value
+          : (r.value.data ?? r.value.notes ?? r.value.notas ?? []);
+        allItems.push(...items);
+      }
+      fetched++;
+    });
+
+    showProgress(fetched);
   }
+
+  /* Ordena de más reciente a más antigua */
+  allItems.sort((a, b) => sortKey(b).localeCompare(sortKey(a)));
+
+  const enrichedCtx = {
+    ...ctx,
+    _fetchedOffset: startOffset + numDays, /* próximo offset para "cargar más" */
+  };
+
+  renderNotasList(container, result, allItems, enrichedCtx);
 }
 
 function renderNotasList(container, el, allItems, ctx, savedState = null) {
+  const fetchedOffset = ctx._fetchedOffset ?? 30;
+
   if (!allItems.length) {
-    el.innerHTML = `<div class="card"><div class="empty-state">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
-        <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
-        <polyline points="14 2 14 8 20 8"/>
-      </svg>
-      Sin notas para la fecha indicada
-    </div></div>`;
+    el.innerHTML = `<div class="card">
+      <div class="empty-state">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+          <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+          <polyline points="14 2 14 8 20 8"/>
+        </svg>
+        Sin notas en los últimos ${fetchedOffset} días
+      </div>
+      <div style="text-align:center;padding-bottom:16px">
+        <button id="btn-load-more-empty" class="btn btn-secondary">
+          Buscar en días anteriores
+        </button>
+      </div>
+    </div>`;
+    el.querySelector('#btn-load-more-empty').addEventListener('click', () => {
+      fetchNotasRange(container, el, ctx, fetchedOffset, 30, []);
+    });
     return;
   }
+
+  const daysLabel = `últimos ${fetchedOffset} días`;
 
   el.innerHTML = `<div class="card">
     <div class="results-filter-bar">
@@ -286,8 +342,8 @@ function renderNotasList(container, el, allItems, ctx, savedState = null) {
     <div class="table-wrap">
       <table>
         <thead><tr>
-          <th style="width:80px">Hora</th>
-          <th style="width:80px">Duración</th>
+          <th style="width:90px">Fecha</th>
+          <th style="width:75px">Hora</th>
           <th style="width:90px">Tipo</th>
           <th>Encabezado</th>
           <th style="width:100px"></th>
@@ -296,6 +352,17 @@ function renderNotasList(container, el, allItems, ctx, savedState = null) {
       </table>
     </div>
     <div id="notas-pager-bottom"></div>
+    <div style="text-align:center;padding-top:14px;border-top:1px solid var(--border);margin-top:8px">
+      <p style="font-size:12px;color:var(--text-muted);margin-bottom:8px">
+        Mostrando notas de los ${daysLabel}
+      </p>
+      <button id="btn-load-more" class="btn btn-secondary btn-sm">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:13px;height:13px">
+          <polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 .49-4.95"/>
+        </svg>
+        Cargar 30 días anteriores
+      </button>
+    </div>
   </div>`;
 
   let filtered = allItems;
@@ -304,7 +371,6 @@ function renderNotasList(container, el, allItems, ctx, savedState = null) {
 
   const textInput = el.querySelector('#notas-text-filter');
 
-  /* Restaura texto del filtro si venimos de volver atrás */
   if (savedState?.query) {
     textInput.value = savedState.query;
     filtered = applyFilter(allItems, savedState.query);
@@ -316,6 +382,10 @@ function renderNotasList(container, el, allItems, ctx, savedState = null) {
     paint();
   });
 
+  el.querySelector('#btn-load-more').addEventListener('click', () => {
+    fetchNotasRange(container, el, ctx, fetchedOffset, 30, allItems);
+  });
+
   function paint() {
     const countEl = el.querySelector('#notas-count');
     if (countEl) countEl.textContent = `${filtered.length} nota(s)`;
@@ -325,12 +395,14 @@ function renderNotasList(container, el, allItems, ctx, savedState = null) {
     tbody.innerHTML = '';
 
     slice.forEach(row => {
-      const id   = row.id ?? row.Id ?? row.ID ?? Object.values(row)[0];
-      const tipo = String(row.type ?? row.tipo ?? '-');
-      const tr   = document.createElement('tr');
+      const id     = row.id ?? row.Id ?? row.ID ?? Object.values(row)[0];
+      const tipo   = String(row.type ?? row.tipo ?? '-');
+      const fecha  = String(row.date ?? row.fecha ?? '-');
+      const hora   = String(row.time ?? row.hora ?? '-');
+      const tr     = document.createElement('tr');
       tr.innerHTML = `
-        <td style="white-space:nowrap">${escHtml(String(row.time ?? row.hora ?? '-'))}</td>
-        <td style="white-space:nowrap">${escHtml(String(row.duration ?? row.duracion ?? '-'))}</td>
+        <td style="white-space:nowrap;font-size:12px">${escHtml(fecha)}</td>
+        <td style="white-space:nowrap">${escHtml(hora)}</td>
         <td><span class="badge badge-blue">${escHtml(tipo)}</span></td>
         <td style="max-width:320px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">
           ${escHtml(String(row.headline ?? row.title ?? row.encabezado ?? row.nota ?? '-'))}
