@@ -334,7 +334,7 @@ function renderNotasList(container, el, allItems, ctx, savedState = null) {
         <svg class="filter-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
           <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
         </svg>
-        <input id="notas-text-filter" class="input results-filter-input" placeholder="Filtrar por título, encabezado o resumen…" autocomplete="off" />
+        <input id="notas-text-filter" class="input results-filter-input" placeholder="Filtrar por título, fecha, tipo…" autocomplete="off" />
       </div>
       <span id="notas-count" class="results-count"></span>
     </div>
@@ -343,9 +343,10 @@ function renderNotasList(container, el, allItems, ctx, savedState = null) {
       <table>
         <thead><tr>
           <th style="width:90px">Fecha</th>
-          <th style="width:75px">Hora</th>
-          <th style="width:90px">Tipo</th>
-          <th>Encabezado</th>
+          <th style="width:70px">Hora</th>
+          <th style="width:100px">Noticiero</th>
+          <th style="width:100px">Tipo</th>
+          <th>Título / Encabezado</th>
           <th style="width:100px"></th>
         </tr></thead>
         <tbody id="notas-tbody"></tbody>
@@ -395,20 +396,26 @@ function renderNotasList(container, el, allItems, ctx, savedState = null) {
     tbody.innerHTML = '';
 
     slice.forEach(row => {
-      const id     = row.id ?? row.Id ?? row.ID ?? Object.values(row)[0];
-      const tipo   = String(row.type ?? row.tipo ?? '-');
-      const fecha  = String(row.date ?? row.fecha ?? '-');
-      const hora   = String(row.time ?? row.hora ?? '-');
-      const tr     = document.createElement('tr');
+      const p     = parseNoteRow(row, ctx);
+      const tr    = document.createElement('tr');
       tr.innerHTML = `
-        <td style="white-space:nowrap;font-size:12px">${escHtml(fecha)}</td>
-        <td style="white-space:nowrap">${escHtml(hora)}</td>
-        <td><span class="badge badge-blue">${escHtml(tipo)}</span></td>
-        <td style="max-width:320px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">
-          ${escHtml(String(row.headline ?? row.title ?? row.encabezado ?? row.nota ?? '-'))}
+        <td style="white-space:nowrap;font-size:12px">${escHtml(p.fecha)}</td>
+        <td style="white-space:nowrap;font-size:12px">${escHtml(p.hora)}</td>
+        <td style="white-space:nowrap">
+          <span style="font-size:11px;color:var(--text-muted)">${escHtml(p.noticiero)}</span>
         </td>
         <td>
-          <button class="btn btn-sm btn-primary btn-ver-nota" data-id="${escHtml(String(id))}">
+          ${p.tipo !== '-'
+            ? `<span class="badge badge-blue">${escHtml(p.tipo)}</span>`
+            : `<span style="color:var(--text-muted);font-size:12px">—</span>`}
+        </td>
+        <td style="max-width:340px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">
+          ${p.titulo !== '-'
+            ? escHtml(p.titulo)
+            : `<span style="color:var(--text-muted);font-size:12px">${escHtml(p.idShort)}</span>`}
+        </td>
+        <td>
+          <button class="btn btn-sm btn-primary btn-ver-nota" data-id="${escHtml(p.id)}">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:12px;height:12px">
               <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/>
             </svg>
@@ -433,13 +440,61 @@ function renderNotasList(container, el, allItems, ctx, savedState = null) {
   paint();
 }
 
+/* ──────────────────────────────────────────────────────
+   Extrae campos útiles de una nota. El ID tiene formato:
+   {CITY}-{CHANNEL}-{YYYYMMDD}-{CODE}-{HHMMSS}-{suffix}
+   ────────────────────────────────────────────────────── */
+function parseNoteRow(row, ctx) {
+  const rawId = typeof row === 'string'
+    ? row
+    : (row.id ?? row.Id ?? row.ID ?? row.noteId ?? row.note_id ?? String(Object.values(row)[0] ?? ''));
+  const id = String(rawId);
+
+  /* Detecta fecha (8 dígitos) y hora (6 dígitos) dentro del ID */
+  const parts    = id.split('-');
+  const datePart = parts.find(p => /^\d{8}$/.test(p)) ?? '';
+  const timePart = parts.find(p => /^\d{6}$/.test(p)) ?? '';
+
+  const fecha = datePart
+    ? `${datePart.slice(6, 8)}/${datePart.slice(4, 6)}/${datePart.slice(0, 4)}`
+    : pick(row, 'date', 'fecha') || '-';
+
+  const hora = timePart
+    ? `${timePart.slice(0, 2)}:${timePart.slice(2, 4)}:${timePart.slice(4, 6)}`
+    : pick(row, 'time', 'hora') || '-';
+
+  const tipo   = pick(row, 'type', 'tipo', 'category', 'note_type', 'noteType') || '-';
+  const titulo = pick(row, 'headline', 'title', 'encabezado', 'nota', 'titulo',
+                          'header', 'subject', 'summary', 'resumen') || '-';
+
+  /* Noticiero: usa label del ctx + código */
+  const noticiero = ctx.code ? `${ctx.label || ctx.channel} (${ctx.code})` : (ctx.label || ctx.channel || '-');
+
+  /* Versión corta del ID para mostrar como fallback */
+  const idShort = id.length > 40 ? `…${id.slice(-30)}` : id;
+
+  return { id, fecha, hora, tipo, titulo, noticiero, idShort };
+}
+
+/* Busca un campo en el objeto row probando múltiples nombres (case-insensitive) */
+function pick(row, ...keys) {
+  if (typeof row !== 'object' || !row) return '';
+  for (const k of keys) {
+    const match = Object.keys(row).find(ok => ok.toLowerCase() === k.toLowerCase());
+    if (match && row[match] != null && row[match] !== '') return String(row[match]);
+  }
+  return '';
+}
+
 function applyFilter(items, q) {
   if (!q.trim()) return items;
   const lq = q.toLowerCase();
-  return items.filter(row =>
-    [row.headline, row.title, row.encabezado, row.nota, row.summary, row.resumen]
-      .filter(Boolean).join(' ').toLowerCase().includes(lq)
-  );
+  return items.filter(row => {
+    const p = parseNoteRow(row, {});
+    return [p.titulo, p.tipo, p.fecha, p.noticiero, p.id,
+            pick(row, 'summary', 'resumen')]
+      .join(' ').toLowerCase().includes(lq);
+  });
 }
 
 /* ════════════════════════════════════════════════════════
