@@ -7,8 +7,22 @@
   <link rel="stylesheet" href="css/style.css" />
 </head>
 <body>
+  <!-- Topbar visible solo en mobile -->
+  <div class="topbar" id="topbar">
+    <button class="hamburger" id="btn-hamburger" aria-label="Menú">
+      <span></span><span></span><span></span>
+    </button>
+    <span class="topbar-title">BDTR Noticias</span>
+    <button id="btn-config-mobile" class="hamburger-config" aria-label="Configuración">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+    </button>
+  </div>
+
+  <!-- Overlay backdrop para cerrar el sidebar en mobile -->
+  <div class="sidebar-overlay" id="sidebar-overlay"></div>
+
   <div id="app">
-    <aside class="sidebar">
+    <aside class="sidebar" id="sidebar">
       <div class="sidebar-header">
         <span class="logo">Opemedios - test API BDTR Noticias</span>
         <span class="logo-sub">Buscador de noticias</span>
@@ -77,5 +91,28 @@
   <div id="toast-container"></div>
 
   <script type="module" src="js/app.js"></script>
+  <script>
+    // Hamburger toggle (inline para no depender del módulo ES)
+    const sidebar  = document.getElementById('sidebar');
+    const overlay  = document.getElementById('sidebar-overlay');
+    const hamburger = document.getElementById('btn-hamburger');
+    const cfgMobile = document.getElementById('btn-config-mobile');
+
+    function openSidebar()  { sidebar.classList.add('open');  overlay.classList.add('visible'); }
+    function closeSidebar() { sidebar.classList.remove('open'); overlay.classList.remove('visible'); }
+
+    hamburger.addEventListener('click', () =>
+      sidebar.classList.contains('open') ? closeSidebar() : openSidebar()
+    );
+    overlay.addEventListener('click', closeSidebar);
+    // Cerrar al seleccionar una vista
+    document.querySelectorAll('.nav-item').forEach(el =>
+      el.addEventListener('click', closeSidebar)
+    );
+    // Botón config del topbar abre el modal de configuración
+    cfgMobile.addEventListener('click', () =>
+      document.getElementById('btn-config').click()
+    );
+  </script>
 </body>
 </html>

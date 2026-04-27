@@ -580,7 +580,7 @@ function renderNoteDetail(card, note, ctx = {}) {
     <div id="gen-panel" style="display:none;margin-bottom:24px">
       <div style="background:var(--bg);border:1px solid var(--border);border-radius:var(--radius);padding:16px">
         <h3 style="font-size:12px;font-weight:600;text-transform:uppercase;letter-spacing:.4px;color:var(--text-muted);margin-bottom:14px">Parámetros para generar nota</h3>
-        <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;margin-bottom:14px">
+        <div class="gen-fields-grid">
           <div class="field" style="margin:0">
             <label class="field-label">Ciudad</label>
             <input id="gen-city"    class="input" value="${escHtml(genCity)}" />
