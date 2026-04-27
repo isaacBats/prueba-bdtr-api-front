@@ -47,6 +47,58 @@ export function todayYYYYMMDD() {
 }
 
 /**
+ * Renders a pagination bar into `el`.
+ * Calls onChange(newPage, newPerPage) on interaction.
+ * @param {HTMLElement} el
+ * @param {number} total
+ * @param {number} page  1-based
+ * @param {number} perPage
+ * @param {(page:number, perPage:number)=>void} onChange
+ */
+export function renderPager(el, total, page, perPage, onChange) {
+  const totalPages = Math.ceil(total / perPage);
+  el.innerHTML = '';
+  if (total === 0) return;
+
+  const start = (page - 1) * perPage + 1;
+  const end   = Math.min(page * perPage, total);
+
+  const pages = buildPageList(page, totalPages);
+
+  el.innerHTML = `<div class="pager">
+    <span class="pager-info">${start}–${end} de ${total}</span>
+    <div class="pager-btns">
+      <button class="pager-btn" data-page="${page - 1}" ${page === 1 ? 'disabled' : ''}>&#8249;</button>
+      ${pages.map(p => p === '…'
+        ? `<span class="pager-ellipsis">…</span>`
+        : `<button class="pager-btn${p === page ? ' active' : ''}" data-page="${p}">${p}</button>`
+      ).join('')}
+      <button class="pager-btn" data-page="${page + 1}" ${page === totalPages ? 'disabled' : ''}>&#8250;</button>
+    </div>
+    <select class="pager-per-page">
+      ${[20, 30, 50].map(n => `<option value="${n}"${n === perPage ? ' selected' : ''}>${n} por pág.</option>`).join('')}
+    </select>
+  </div>`;
+
+  el.querySelectorAll('.pager-btn:not([disabled])').forEach(btn => {
+    btn.addEventListener('click', () => onChange(parseInt(btn.dataset.page, 10), perPage));
+  });
+  el.querySelector('.pager-per-page').addEventListener('change', e => {
+    onChange(1, parseInt(e.target.value, 10));
+  });
+}
+
+function buildPageList(page, total) {
+  if (total <= 7) return Array.from({ length: total }, (_, i) => i + 1);
+  const pages = [1];
+  if (page > 3) pages.push('…');
+  for (let i = Math.max(2, page - 1); i <= Math.min(total - 1, page + 1); i++) pages.push(i);
+  if (page < total - 2) pages.push('…');
+  pages.push(total);
+  return pages;
+}
+
+/**
  * Returns the HTML string for a searchable select widget.
  * After inserting into the DOM, call initSearchableSelect(el, options).
  */
